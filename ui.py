@@ -12,12 +12,10 @@ class HPBar:
         # 1x1 픽셀 이미지 로드
         try:
             self.white_img = load_image('white.png')
-            self.green_img = load_image('green.png')
             print("✓ HP 바 이미지 로드 완료")
         except:
             print("! HP 바 이미지 로드 실패")
             self.white_img = None
-            self.green_img = None
         
         # 하트 애니메이션 로드
         try:

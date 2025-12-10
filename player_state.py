@@ -131,21 +131,17 @@ class ParryState:
         import time
         player.parry_input_time = time.time()  # 마지막 입력 시간 기록 또는 갱신
         
-        # 새로운 패링 시작이면 phase 0부터
-        if player.parry_phase >= player.max_parry_phases:
-            player.parry_phase = 0
+        # 공중 패링 애니메이션 사용 (전체 재생)
+        player.current_anim = 'player_parry_sky'
+        player.anim_frame = 0
+        player.anim_start_frame = 0
+        player.max_anim_frames = 0  # 전체 프레임 재생
         
-        # 현재 단계의 5프레임 재생
-        start_frame = player.parry_phase * 5
-        player.current_anim = 'player_parry'
-        player.anim_frame = start_frame
-        player.anim_start_frame = start_frame
-        player.max_anim_frames = 5
+        # 점프 시작
+        player.is_jumping = True
+        player.jump_time = 0
         
-        print(f"ParryState 진입 - 단계 {player.parry_phase + 1}/3: 프레임 {start_frame}~{start_frame + 4}")
-        
-        # 다음 단계로 증가
-        player.parry_phase += 1
+        print(f"ParryState 진입 - 공중 패링!")
     
       
     def exit(player, e):
@@ -153,15 +149,17 @@ class ParryState:
     
       
     def do(player):
-        # 0.3초간 입력이 없으면 Run 상태로 전환
-        if time.time() - player.parry_input_time > 0.2:
-            player.state_machine.add_event(('TIME_OUT', 0))
+        # 애니메이션이 끝나면 Run 상태로 전환
+        if player.current_anim == 'player_parry_sky':
+            anim_data = player.sprite_sheets.get('player_parry_sky')
+            if anim_data and player.anim_frame >= anim_data['total_frames'] - 1:
+                player.state_machine.add_event(('TIME_OUT', 0))
     
       
     def draw(player):
-        # Parry 애니메이션 그리기
-        if 'player_parry' in player.sprite_sheets:
-            anim_data = player.sprite_sheets['player_parry']
+        # 공중 Parry 애니메이션 그리기
+        if 'player_parry_sky' in player.sprite_sheets:
+            anim_data = player.sprite_sheets['player_parry_sky']
             sprite_sheet = anim_data['image']
             sprite_width = anim_data['sprite_width']
             sprite_height = anim_data['sprite_height']
@@ -244,8 +242,8 @@ transitions = {
         DIE: DieState  # HP 0 시 Die로 전환
     },
     ParryState: {
-        SPACE_DOWN: ParryState,  
-        TIME_OUT: FightIdleState,  # 0.2초간 입력 없으면 FightingIdle로 전환
+        SPACE_DOWN: ParryState,  # 연속 패링 가능
+        TIME_OUT: RunState,  # 패링 애니메이션 종료 후 바로 Run으로
         HIT: HitState,  # 피격 시 HitState로 전환
         DIE: DieState  # HP 0 시 Die로 전환
     },

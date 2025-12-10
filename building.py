@@ -2,10 +2,11 @@ from pico2d import *
 import time
 import math
 import random
+from music_analyzer import MusicAnalyzer
+import pygame
 
 class RhythmNote:
     """리듬 노트 클래스"""
-    # 클래스 변수로 이미지 공유
     note_image = None
     
     @classmethod
@@ -26,27 +27,26 @@ class RhythmNote:
         self.judgment = None  # 'perfect', 'good', 'bad', 'miss'
         
         # 시각적 표현
-        self.x = 1080  # 화면 오른쪽 끝에서 시작
-        self.y = 130  # 플레이어 y 위치에 맞춤
+        self.x = 1080  
+        self.y = 130 
         self.target_x = 120  # 플레이어 위치
         
-        # NormalArrow 원본 크기: 289x80
-        # 가로세로 비율 유지하면서 스케일 조정
+
         self.arrow_width = 289
         self.arrow_height = 80
-        self.scale = 0.25  # 스케일 팩터 (0.5의 절반 = 0.25)
-        self.draw_width = int(self.arrow_width * self.scale)  # 72
-        self.draw_height = int(self.arrow_height * self.scale)  # 20
+        self.scale = 0.25 
+        self.draw_width = int(self.arrow_width * self.scale)  
+        self.draw_height = int(self.arrow_height * self.scale)  
         
-        # 충돌박스도 스프라이트 크기에 맞춤 (정사각형이 아닌 직사각형)
+  
         self.collision_width = self.draw_width
         self.collision_height = self.draw_height
         
         # 패링 상태
         self.is_parried = False  # 패링되었는지
-        self.parry_speed = 300  # 패링 후 날아가는 속도 (픽셀/초)
-        
-        # 이미지가 로드되지 않았으면 로드
+        self.parry_speed = 1800  
+        self.parry_alpha = 0.5  
+
         if RhythmNote.note_image is None:
             RhythmNote.load_images()
     
@@ -73,9 +73,8 @@ class RhythmNote:
             # 노트가 목표 지점으로 이동
             time_to_beat = self.beat_time - current_time
             if time_to_beat > 0:
-                # 2초 전부터 노트가 나타남
                 progress = max(0, (2.0 - time_to_beat) / 2.0)
-                self.x = 1080 - (990 * progress)  # 1080에서 90까지 이동
+                self.x = 1080 - (1800 * progress) 
             else:
                 self.x = self.target_x
     
@@ -89,43 +88,60 @@ class RhythmNote:
         if self.is_hit:
             return
         
-        # 시간 계산 (패링 여부 관계없이)
         time_to_beat = self.beat_time - current_time
         
-        # 패링되지 않은 경우에만 시간 체크
         if not self.is_parried:
-            # 노트가 화면에 나타날 시간인지 확인
-            if time_to_beat > 2.0:  # 2초 전부터 표시
+            if time_to_beat > 2.0:  
                 return
         
-        # NormalArrow 이미지 그리기 (가로세로 비율 유지 + 좌우반전)
+       
         if RhythmNote.note_image:
-            # 패링 여부에 따라 방향 결정
             flip = '' if self.is_parried else 'h'  # 패링되면 정방향, 아니면 좌우반전
-            
-            RhythmNote.note_image.composite_draw(
-                0, flip,
-                int(self.x), int(self.y), 
-                self.draw_width, self.draw_height
-            )
+
+            if self.is_parried:
+                RhythmNote.note_image.opacify(self.parry_alpha)
+                RhythmNote.note_image.composite_draw(
+                    0, flip,
+                    int(self.x), int(self.y), 
+                    self.draw_width, self.draw_height
+                )
+                RhythmNote.note_image.opacify(1.0)  # 투명도 원상복구
+            else:
+                RhythmNote.note_image.composite_draw(
+                    0, flip,
+                    int(self.x), int(self.y), 
+                    self.draw_width, self.draw_height
+                )
 
 
 class RhythmManager:
-    """리듬 게임 관리자"""
-    def __init__(self):
-        self.bpm = 120  # 분당 박자 수
-        self.beat_interval = 60.0 / self.bpm  # 박자 간격
-        self.start_time = time.time()
+    """리듬 게임 관리자 - 음악 분석 기반"""
+    def __init__(self, music_path='music/M2U.mp3', difficulty='hard'):
+        """
+        Args:
+            music_path: 음악 파일 경로
+            difficulty: 난이도 ('easy', 'normal', 'hard')
+        """
+        self.music_path = music_path
+        self.difficulty = difficulty
+        self.start_time = None  
         self.current_time = 0
+        self.music_start_delay = 3.0  
+        
+        # 음악 분석
+        self.analyzer = MusicAnalyzer(music_path)
+        self.bpm = 120  # 기본값
+        self.duration = 0
         
         # 노트 리스트
         self.notes = []
         self.active_notes = []
+        self.chart_data = []  # 채보 데이터 (초 단위)
         
         # 판정 관련
         self.perfect_window = 0.05  # ±0.05초
         self.good_window = 0.1     # ±0.1초
-        self.bad_window = 0.1     # ±0.1초
+        self.bad_window = 0.15     # ±0.15초
         
         # 콜백
         self.on_miss_callback = None  # Miss 시 호출할 콜백
@@ -135,65 +151,136 @@ class RhythmManager:
         self.combo = 0
         self.max_combo = 0
         
-        # 무한 생성을 위한 변수
-        self.last_pattern_beat = 4  # 마지막으로 생성된 패턴의 박자 위치
+        # 음악 재생 관련 (pygame.mixer)
+        self.music_loaded = False
+        self.music_playing = False
         
-        # 패턴 생성
-        self.generate_initial_pattern()
+        # 음악 분석 및 채보 생성
+        self.load_music_and_generate_chart()
     
-    def generate_initial_pattern(self):
-        """초기 리듬 패턴 생성 (리듬세상 스타일)"""
-        for _ in range(3):  # 처음에 3개 패턴 생성
-            self.add_pattern()
+    def load_music_and_generate_chart(self):
+        """음악 로드 및 채보 생성"""
+        # 음악 분석
+        if self.analyzer.load_and_analyze():
+            self.bpm = self.analyzer.get_bpm()
+            self.duration = self.analyzer.get_duration()
+            
+            # 채보 생성
+            self.chart_data = self.analyzer.generate_chart(
+                difficulty=self.difficulty,
+                start_delay=self.music_start_delay
+            )
+            
+            print(f"\n📊 리듬 매니저 초기화 완료")
+            print(f"  - BPM: {self.bpm:.1f}")
+            print(f"  - 난이도: {self.difficulty}")
+            print(f"  - 노트 수: {len(self.chart_data)}")
+            print(f"  - 음악 길이: {self.duration:.2f}초\n")
+            
+            # pygame.mixer 초기화 및 음악 로드
+            try:
+                if not pygame.mixer.get_init():
+                    pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+                    print("✓ pygame.mixer 초기화 완료")
+                
+                pygame.mixer.music.load(self.music_path)
+                self.music_loaded = True
+                print(f"✓ 음악 파일 로드 완료: {self.music_path}\n")
+            except Exception as e:
+                print(f"⚠️ 음악 재생 초기화 실패: {e}")
+                self.music_loaded = False
+        else:
+            print("⚠️ 음악 분석 실패, 기본 패턴 사용")
+            # 분석 실패 시 기본 패턴 생성
+            self.generate_fallback_pattern()
     
-    def add_pattern(self):
-        """새로운 패턴 추가 (무한 생성용)"""
-        patterns = [
-            # 기본 4박자
-            [1, 2, 3, 4],
-            # 빠른 연타
-            [1, 1.5, 2, 2.5],
-            # 신코페이션
-            [1, 1.75, 2.5, 3.25],
-            # 복잡한 패턴
-            [1, 1.25, 1.75, 2.25, 3, 3.5]
-        ]
+    def generate_fallback_pattern(self):
+        """음악 분석 실패 시 기본 패턴 생성"""
+        print("기본 패턴 생성 중...")
+        self.bpm = 120
+        beat_interval = 60.0 / self.bpm
         
-        pattern = random.choice(patterns)
-        for beat in pattern:
-            note_time = self.start_time + (self.last_pattern_beat + beat) * self.beat_interval
-            self.notes.append(RhythmNote(note_time))
+        # 20초 분량의 기본 패턴
+        for i in range(40):
+            note_time = self.music_start_delay + i * beat_interval
+            self.chart_data.append(note_time)
         
-        self.last_pattern_beat += 6  # 각 패턴 사이에 여유
+        print(f"기본 패턴 생성 완료: {len(self.chart_data)}개 노트")
+    
+    def start_music(self):
+        """음악 재생 시작"""
+        if self.music_loaded and not self.music_playing:
+            try:
+                # 음악 재생 (지연 없이 즉시)
+                pygame.mixer.music.play(0)  # 0 = 한 번만 재생
+                self.music_playing = True
+                print(f"🎵 음악 재생 시작 (게임 시작 {self.music_start_delay}초 후)")
+                return True
+            except Exception as e:
+                print(f"⚠️ 음악 재생 실패: {e}")
+                return False
+        return False
     
     def update(self, dt):
         """리듬 매니저 업데이트"""
-        self.current_time = time.time()
+        # 첫 업데이트에서 타이머 시작 (음악은 지연 후 재생)
+        if self.start_time is None:
+            self.start_time = time.time()
+            # 채보 데이터로 노트 생성
+            self.create_notes_from_chart()
+        
+        # 현재 시간 업데이트 (게임 시작 시점 기준)
+        elapsed_time = time.time() - self.start_time
+        
+        # 음악 시작 전이면 current_time을 음수로 설정 (음악 동기화)
+        self.current_time = elapsed_time - self.music_start_delay
+        
+        # music_start_delay 후에 음악 재생
+        if not self.music_playing and elapsed_time >= self.music_start_delay:
+            self.start_music()
         
         # 활성 노트 업데이트
         for note in self.active_notes[:]:
             note.update(dt, self.current_time)
             
             # 놓친 노트 처리 (패링되지 않은 노트만)
-            if not note.is_hit and not note.is_parried and self.current_time - note.beat_time > self.bad_window:
-                note.judgment = 'miss'
-                note.is_hit = True
-                self.combo = 0
-                # Miss 콜백 호출
-                if self.on_miss_callback:
-                    self.on_miss_callback()
-                    print("Miss! 데미지")
-                self.active_notes.remove(note)
+            if not note.is_hit and not note.is_parried:
+                # 플레이어의 패리 범위(x=90 기준)를 지나간 경우 즉시 Miss
+                # 패리 범위는 player.x ± 64 (충돌박스) = 26 ~ 154
+                # 화살표가 x=26(왼쪽 경계)보다 왼쪽으로 가면 Miss
+                if note.x < 26:  # 플레이어 패리 범위의 왼쪽 경계
+                    note.judgment = 'miss'
+                    note.is_hit = True  # 즉시 사라지도록 표시
+                    self.combo = 0
+                    # Miss 콜백 호출
+                    if self.on_miss_callback:
+                        self.on_miss_callback()
+                        print("Miss! 데미지")
+                    self.active_notes.remove(note)
+                # 시간 기반 Miss 판정 (백업)
+                else:
+                    time_passed = self.current_time - note.beat_time
+                    if time_passed > self.bad_window:
+                        note.judgment = 'miss'
+                        note.is_hit = True
+                        self.combo = 0
+                        if self.on_miss_callback:
+                            self.on_miss_callback()
+                            print("Miss! 데미지")
+                        self.active_notes.remove(note)
         
-        # 새로운 노트 활성화
+        # 새로운 노트 활성화 (2초 전부터 화면에 표시)
         for note in self.notes[:]:
-            if self.current_time >= note.beat_time - 2.0:  # 2초 전부터 활성화
+            if self.current_time >= note.beat_time - 2.0:
                 self.active_notes.append(note)
                 self.notes.remove(note)
-        
-        # 노트가 부족하면 새 패턴 추가 (무한 생성)
-        if len(self.notes) < 10:  # 대기 중인 노트가 10개 미만이면
-            self.add_pattern()
+    
+    def create_notes_from_chart(self):
+        """채보 데이터로부터 노트 생성"""
+        self.notes = []
+        for beat_time in self.chart_data:
+            self.notes.append(RhythmNote(beat_time))
+        print(f"✓ {len(self.notes)}개 노트 생성 완료")
     
     def try_hit(self, hit_time=None, player=None):
         """플레이어의 입력 처리 - 충돌 기반 패링"""
@@ -204,9 +291,9 @@ class RhythmManager:
         parried_note = None
         
         if player:
-            # 플레이어 충돌박스 (간단히 중심점 기준)
+            # 플레이어 충돌박스 (오른쪽으로 확장하여 패링 범위 증가)
             player_left = player.x - 64
-            player_right = player.x + 64
+            player_right = player.x + 120  # 64 -> 120으로 확장 (오른쪽 범위 증가)
             player_bottom = player.y - 64
             player_top = player.y + 64
             
@@ -256,8 +343,10 @@ class RhythmManager:
         else:
             self.combo = 0
         
-        # 노트 판정 저장 (제거하지 않음 - 날아가는 모습을 봐야 함)
+        # 노트 판정 저장 (패링된 화살은 제거하지 않고 반대로 날아감)
         parried_note.judgment = judgment
+        # is_hit은 설정하지 않음 - 패링된 화살은 계속 날아가야 함
+        # active_notes에서도 제거하지 않음 - update()에서 화면 밖으로 나갈 때 제거됨
         
         return judgment, success, parried_note
     
@@ -282,4 +371,19 @@ class RhythmManager:
     
     def is_finished(self):
         """패턴이 모두 끝났는지 확인"""
-        return len(self.notes) == 0 and len(self.active_notes) == 0
+        # 모든 노트가 처리되었고, 음악도 끝났는지 체크
+        all_notes_done = len(self.notes) == 0 and len(self.active_notes) == 0
+        
+        # 음악이 재생 중인지 확인
+        music_finished = False
+        if self.music_loaded and self.music_playing:
+            music_finished = not pygame.mixer.music.get_busy()
+        
+        return all_notes_done or (self.music_playing and music_finished)
+    
+    def stop_music(self):
+        """음악 정지"""
+        if self.music_loaded and self.music_playing:
+            pygame.mixer.music.stop()
+            self.music_playing = False
+            print("🔇 음악 정지")

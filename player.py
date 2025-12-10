@@ -12,7 +12,15 @@ class Player:
         # 패링 상태
         self.is_parrying = False
         self.parry_time = 0
-        self.parry_duration = 0.75  # 패링 애니메이션 시간 (15프레임 / 20fps = 0.75초)
+        self.parry_duration = 0.4  # 공중 패링 애니메이션 시간 (8프레임 / 24fps = 0.33초)
+        
+        # 점프 동작
+        self.is_jumping = False
+        self.jump_speed = 150  # 점프 속도 (픽셀/초)
+        self.jump_height = 40  # 점프 높이
+        self.base_y = 130  # 기본 y 위치
+        self.jump_time = 0
+        self.jump_duration = 0.4  # 전체 점프 시간
         
         # 패링 단계 (스페이스 누를 때마다 5프레임씩)
         self.parry_phase = 0  # 0: 0-4프레임, 1: 5-9프레임, 2: 10-14프레임
@@ -114,7 +122,7 @@ class Player:
                 'sprite_height': 512,
                 'sprites_per_row': 14,
                 'total_frames': 14,
-                'fps': 20
+                'fps': 30  # 20에서 30으로 증가 (1.5배 빠르게)
             }
             print(f"  - player_hurt_2 로드 완료")
             
@@ -128,6 +136,17 @@ class Player:
                 'fps': 24
             }
             print(f"  - player_parry (ABC) 로드 완료")
+            
+            # 플레이어 공중 패링 애니메이션 (새로운!)
+            self.sprite_sheets['player_parry_sky'] = {
+                'image': load_image('sprite_sheets/player_parry_sky.png'),
+                'sprite_width': 512,
+                'sprite_height': 512,
+                'sprites_per_row': 8,
+                'total_frames': 8,
+                'fps': 24
+            }
+            print(f"  - player_parry_sky (공중 패링) 로드 완료")
 
             
             # 플레이어 공중 패링 애니메이션
@@ -170,6 +189,17 @@ class Player:
                 'fps': 30
             }
             
+            # 공중 패링 이펙트 (새로운!)
+            self.sprite_sheets['parry_sky_effect'] = {
+                'image': load_image('sprite_sheets/effect_parry_sky.png'),
+                'sprite_width': 512,
+                'sprite_height': 512,
+                'sprites_per_row': 6,
+                'total_frames': 6,
+                'fps': 30
+            }
+            print(f"  - parry_sky_effect (공중 패링 이펙트) 로드 완료")
+            
             # 반격 이펙트
             self.sprite_sheets['counter_effect'] = {
                 'image': load_image('sprite_sheets/ParryCounterAttack_sheet.png'),
@@ -193,6 +223,20 @@ class Player:
         if self.hp <= 0 and not self.is_dead:
             print(f"HP 0 도달! Die 이벤트 발생")
             self.state_machine.add_event(('DIE', 0))
+        
+        # 점프 동작 업데이트
+        if self.is_jumping:
+            self.jump_time += dt
+            if self.jump_time >= self.jump_duration:
+                # 점프 종료
+                self.is_jumping = False
+                self.y = self.base_y
+                self.jump_time = 0
+            else:
+                # 포물선 점프 (사인 함수 사용)
+                import math
+                progress = self.jump_time / self.jump_duration
+                self.y = self.base_y + math.sin(progress * math.pi) * self.jump_height
         
         # 상태 머신 업데이트
         self.state_machine.update()
@@ -277,9 +321,9 @@ class Player:
             self.start_effect('counter_effect')
             print("Perfect 패링! 반격 이펙트")
         else:
-            # 일반 패링 - 번쩍이는 이펙트
-            self.start_effect('accurate')
-            print("Good 패링! 스파크 이펙트")
+            # 일반 패링 - 공중 패링 이펙트
+            self.start_effect('parry_sky_effect')
+            print("Good 패링! 공중 스파크 이펙트")
     
     def start_animation(self, anim_name, start_frame=0, max_frames=0):
         """애니메이션 시작

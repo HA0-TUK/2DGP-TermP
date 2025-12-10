@@ -18,8 +18,9 @@ class PlayMode:
         
     def enter(self):
         self.player = Player()
-        self.rhythm_manager = RhythmManager()
-        self.background = Background(scroll_speed=200)
+        # 난이도 설정 (easy, normal, hard)
+        self.rhythm_manager = RhythmManager(difficulty='normal')
+        self.background = Background(scroll_speed=500)
         self.hp_bar = HPBar()
         self.game_over = False
         self.victory = False
@@ -29,7 +30,9 @@ class PlayMode:
         self.rhythm_manager.on_miss_callback = self.player.take_damage
         
     def exit(self):
-        pass
+        # 음악 정지
+        if hasattr(self, 'rhythm_manager') and self.rhythm_manager:
+            self.rhythm_manager.stop_music()
         
     def pause(self):
         pass
@@ -61,6 +64,8 @@ class PlayMode:
                         
             elif event.key == SDLK_r and (self.game_over or self.victory):
                 # 게임 재시작
+                if hasattr(self, 'rhythm_manager') and self.rhythm_manager:
+                    self.rhythm_manager.stop_music()
                 self.__init__()
                 self.enter()
                 
@@ -73,10 +78,8 @@ class PlayMode:
             
         dt = game_framework.game_state.dt
         
-        # 배경 업데이트 (RunState일 때만 스크롤)
-        from player_state import RunState
-        should_scroll = (self.player.state_machine.cur_state == RunState)
-        self.background.update(dt, should_scroll)
+        # 배경 업데이트 (항상 스크롤)
+        self.background.update(dt, True)
         
         # 플레이어 업데이트
         self.player.update(dt)
