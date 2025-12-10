@@ -1,22 +1,17 @@
 from pico2d import *
 import time
-import math
-import random
 from music_analyzer import MusicAnalyzer
 import pygame
 
 class RhythmNote:
-    """리듬 노트 클래스"""
     note_image = None
     long_note_effect = None  # 롱 노트 이펙트 이미지
     
     @classmethod
     def load_images(cls):
-        """노트 이미지 로드 (한 번만)"""
         if cls.note_image is None:
             try:
                 cls.note_image = load_image('originSprite/Bow/NormalArrow.png')
-                print("✓ NormalArrow.png 로드 완료")
             except Exception as e:
                 print(f"노트 이미지 로드 실패: {e}")
                 cls.note_image = None
@@ -24,15 +19,14 @@ class RhythmNote:
         if cls.long_note_effect is None:
             try:
                 cls.long_note_effect = load_image('originSprite/Bow/Lv1光束.png')
-                print("✓ Lv1光束.png 로드 완료")
             except Exception as e:
                 print(f"롱 노트 이펙트 로드 실패: {e}")
                 cls.long_note_effect = None
     
     def __init__(self, beat_time, note_type='normal', duration=0):
         self.beat_time = beat_time  # 언제 쳐야 하는지
-        self.note_type = note_type  # 노트 타입 ('normal', 'long')
-        self.duration = duration  # 롱 노트 지속 시간 (초)
+        self.note_type = note_type  # 노트 타입 
+        self.duration = duration  # 롱 노트 지속 시간 
         self.is_hit = False
         self.judgment = None  # 'perfect', 'good', 'bad', 'miss'
         
@@ -64,7 +58,6 @@ class RhythmNote:
             RhythmNote.load_images()
     
     def get_collision_box(self):
-        """충돌박스 반환 (left, bottom, right, top)"""
         half_w = self.collision_width // 2
         half_h = self.collision_height // 2
         return (
@@ -75,7 +68,6 @@ class RhythmNote:
         )
         
     def update(self, dt, current_time):
-        """노트 업데이트"""
         if self.is_parried:
             # 패링된 화살표는 오른쪽으로 날아감
             self.x += self.parry_speed * dt
@@ -104,12 +96,9 @@ class RhythmNote:
                 self.x = self.target_x
     
     def parry(self):
-        """화살표를 패링함"""
         self.is_parried = True
-        print(f"화살표 패링! 반대로 날아감")
     
     def draw(self, current_time):
-        """노트 그리기"""
         if self.is_hit:
             return
         
@@ -122,11 +111,11 @@ class RhythmNote:
         if RhythmNote.note_image:
             flip = '' if self.is_parried else 'h'  # 패링되면 정방향, 아니면 좌우반전
 
-            # 롱 노트인 경우 이펙트만 그리기 (화살 없이 Lv1光束.png만 사용)
+            # 롱 노트
             if self.note_type == 'long' and self.duration > 0 and RhythmNote.long_note_effect:
                 # 홀딩 중일 때는 남은 시간만큼만 그리기
                 if self.is_holding and not self.hold_completed:
-                    # 남은 시간 계산 (current_time 사용 - update와 동일한 시간 기준)
+                    # 남은 시간 계산
                     hold_elapsed = current_time - self.hold_start_time
                     remaining_time = max(0, self.duration - hold_elapsed)
                     
@@ -144,8 +133,8 @@ class RhythmNote:
                             visible_length, effect_height
                         )
                 elif not self.is_parried and not self.is_holding:
-                    # 일반 상태 - 전체 이펙트 그리기 (화살 없이)
-                    full_effect_length = int(self.duration * 900)  # 900px/s 기준
+                    # 일반 
+                    full_effect_length = int(self.duration * 900)  
                     effect_center_x = int(self.x + full_effect_length / 2)
                     effect_center_y = int(self.y)
                     effect_height = int(RhythmNote.long_note_effect.h * 0.25)
@@ -155,7 +144,7 @@ class RhythmNote:
                         effect_center_x, effect_center_y,
                         full_effect_length, effect_height
                     )
-            # 일반 노트만 화살 그리기 (롱 노트는 화살 없이 이펙트만)
+            # 일반 노트
             if self.note_type != 'long' or self.is_parried:
                 if self.is_parried:
                     RhythmNote.note_image.opacify(self.parry_alpha)
@@ -198,21 +187,21 @@ class RhythmManager:
         self.chart_data = []  # 채보 데이터 (초 단위)
         
         # 판정 관련
-        self.perfect_window = 0.05  # ±0.05초
-        self.good_window = 0.1     # ±0.1초
-        self.bad_window = 0.15     # ±0.15초
+        self.perfect_window = 0.05 
+        self.good_window = 0.1    
+        self.bad_window = 0.15   
         
         # 콜백
         self.on_miss_callback = None  # Miss 시 호출할 콜백
         self.on_hold_complete_callback = None  # 홀딩 완료 시 호출할 콜백
-        self.player_ref = None  # Player 참조 (홀딩 완료 시 상태 전환용)
+        self.player_ref = None  # 홀딩 완료 시 상태 전환용
         
         # 점수
         self.score = 0
         self.combo = 0
         self.max_combo = 0
         
-        # 음악 재생 관련 (pygame.mixer)
+        # 음악 재생
         self.music_loaded = False
         self.music_playing = False
         
@@ -232,68 +221,52 @@ class RhythmManager:
                 start_delay=self.music_start_delay
             )
             
-            print(f"\n📊 리듬 매니저 초기화 완료")
-            print(f"  - BPM: {self.bpm:.1f}")
-            print(f"  - 난이도: {self.difficulty}")
-            print(f"  - 노트 수: {len(self.chart_data)}")
-            print(f"  - 음악 길이: {self.duration:.2f}초\n")
             
-            # pygame.mixer 초기화 및 음악 로드
             try:
                 if not pygame.mixer.get_init():
                     pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
-                    print("✓ pygame.mixer 초기화 완료")
+
                 
                 pygame.mixer.music.load(self.music_path)
                 self.music_loaded = True
-                print(f"✓ 음악 파일 로드 완료: {self.music_path}\n")
             except Exception as e:
-                print(f"⚠️ 음악 재생 초기화 실패: {e}")
                 self.music_loaded = False
         else:
-            print("⚠️ 음악 분석 실패, 기본 패턴 사용")
             # 분석 실패 시 기본 패턴 생성
             self.generate_fallback_pattern()
     
     def generate_fallback_pattern(self):
-        """음악 분석 실패 시 기본 패턴 생성"""
-        print("기본 패턴 생성 중...")
         self.bpm = 120
         beat_interval = 60.0 / self.bpm
         
-        # 20초 분량의 기본 패턴
         for i in range(40):
             note_time = self.music_start_delay + i * beat_interval
             self.chart_data.append(note_time)
         
-        print(f"기본 패턴 생성 완료: {len(self.chart_data)}개 노트")
     
     def start_music(self):
-        """음악 재생 시작"""
         if self.music_loaded and not self.music_playing:
             try:
-                # 음악 재생 (지연 없이 즉시)
+                # 음악 재생 
                 pygame.mixer.music.play(0)  # 0 = 한 번만 재생
                 self.music_playing = True
-                print(f"🎵 음악 재생 시작 (게임 시작 {self.music_start_delay}초 후)")
                 return True
             except Exception as e:
-                print(f"⚠️ 음악 재생 실패: {e}")
+                print(f"음악 재생 실패: {e}")
                 return False
         return False
     
     def update(self, dt):
-        """리듬 매니저 업데이트"""
-        # 첫 업데이트에서 타이머 시작 (음악은 지연 후 재생)
+        # 첫 업데이트에서 타이머 시작 
         if self.start_time is None:
             self.start_time = time.time()
             # 채보 데이터로 노트 생성
             self.create_notes_from_chart()
         
-        # 현재 시간 업데이트 (게임 시작 시점 기준)
+        # 현재 시간 업데이트 
         elapsed_time = time.time() - self.start_time
         
-        # 음악 시작 전이면 current_time을 음수로 설정 (음악 동기화)
+        # 음악 시작 전이면 current_time을 음수로 설정
         self.current_time = elapsed_time - self.music_start_delay
         
         # music_start_delay 후에 음악 재생
@@ -315,9 +288,7 @@ class RhythmManager:
             
             # 놓친 노트 처리 (패링되지 않은 노트만)
             if not note.is_hit and not note.is_parried and not note.is_holding:
-                # 플레이어의 패리 범위(x=90 기준)를 지나간 경우 즉시 Miss
-                # 패리 범위는 player.x ± 64 (충돌박스) = 26 ~ 154
-                # 화살표가 x=26(왼쪽 경계)보다 왼쪽으로 가면 Miss
+
                 if note.x < 26:  # 플레이어 패리 범위의 왼쪽 경계
                     note.judgment = 'miss'
                     note.is_hit = True  # 즉시 사라지도록 표시
@@ -327,7 +298,7 @@ class RhythmManager:
                         self.on_miss_callback()
                         print("Miss! 데미지")
                     self.active_notes.remove(note)
-                # 시간 기반 Miss 판정 (백업)
+                # 시간 기반 Miss 판정 
                 else:
                     time_passed = self.current_time - note.beat_time
                     if time_passed > self.bad_window:
@@ -339,7 +310,7 @@ class RhythmManager:
                             print("Miss! 데미지")
                         self.active_notes.remove(note)
         
-        # 새로운 노트 활성화 (2초 전부터 화면에 표시)
+        # 새로운 노트 활성화
         for note in self.notes[:]:
             if self.current_time >= note.beat_time - 2.0:
                 self.active_notes.append(note)

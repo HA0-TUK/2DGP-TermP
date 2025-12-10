@@ -62,6 +62,9 @@ def change_state(state):
     stack.append(state)
     state.enter()
 
+# change_mode는 change_state의 별칭
+change_mode = change_state
+
 def push_state(state):
     global stack
     if len(stack) > 0:

@@ -6,7 +6,7 @@ from background import Background
 from ui import HPBar
 
 class PlayMode:
-    def __init__(self):
+    def __init__(self, music_path='music/M2U.mp3', difficulty='normal'):
         self.player = None
         self.rhythm_manager = None
         self.background = None
@@ -14,12 +14,15 @@ class PlayMode:
         self.victory = False
         self.last_judgment = None
         self.judgment_time = 0
-        self.die_animation_finished = False 
+        self.die_animation_finished = False
+        # 음악과 난이도 저장
+        self.music_path = music_path
+        self.difficulty = difficulty
         
     def enter(self):
         self.player = Player()
-        # 난이도 설정 (easy, normal, hard)
-        self.rhythm_manager = RhythmManager(difficulty='normal')
+        # 선택된 음악과 난이도로 리듬 매니저 초기화
+        self.rhythm_manager = RhythmManager(music_path=self.music_path, difficulty=self.difficulty)
         self.background = Background(scroll_speed=500)
         self.hp_bar = HPBar()
         self.game_over = False
