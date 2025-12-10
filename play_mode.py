@@ -3,6 +3,7 @@ import game_framework
 from player import Player
 from building import RhythmManager
 from background import Background
+from ui import HPBar
 
 class PlayMode:
     def __init__(self):
@@ -19,6 +20,7 @@ class PlayMode:
         self.player = Player()
         self.rhythm_manager = RhythmManager()
         self.background = Background(scroll_speed=200)
+        self.hp_bar = HPBar()
         self.game_over = False
         self.victory = False
         self.die_animation_finished = False
@@ -79,6 +81,9 @@ class PlayMode:
         # 플레이어 업데이트
         self.player.update(dt)
         
+        # HP 바 애니메이션 업데이트
+        self.hp_bar.update(dt)
+        
         # Die 상태가 아닐 때만 리듬 시스템 업데이트 (화살표 생성)
         if not self.player.is_dead:
             self.rhythm_manager.update(dt)
@@ -134,9 +139,9 @@ class PlayMode:
         pass
     
     def draw_ui(self):
-        """UI 그리기"""
-        # UI 표시 제거
-        pass
+        """UI 그리기 - 체력 바"""
+        if self.player:
+            self.hp_bar.draw(self.player.hp, self.player.max_hp)
     
     def draw_game_over(self):
         """게임 오버 화면"""
