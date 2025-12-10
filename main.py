@@ -6,3 +6,4 @@ if __name__ == '__main__':
     game_framework.init()
     game_framework.run(play_mode.PlayMode())
     game_framework.quit()
+    

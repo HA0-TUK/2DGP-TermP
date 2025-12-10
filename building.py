@@ -8,6 +8,7 @@ import pygame
 class RhythmNote:
     """리듬 노트 클래스"""
     note_image = None
+    long_note_effect = None  # 롱 노트 이펙트 이미지
     
     @classmethod
     def load_images(cls):
@@ -19,26 +20,38 @@ class RhythmNote:
             except Exception as e:
                 print(f"노트 이미지 로드 실패: {e}")
                 cls.note_image = None
+        
+        if cls.long_note_effect is None:
+            try:
+                cls.long_note_effect = load_image('originSprite/Bow/Lv1光束.png')
+                print("✓ Lv1光束.png 로드 완료")
+            except Exception as e:
+                print(f"롱 노트 이펙트 로드 실패: {e}")
+                cls.long_note_effect = None
     
-    def __init__(self, beat_time, note_type='normal'):
+    def __init__(self, beat_time, note_type='normal', duration=0):
         self.beat_time = beat_time  # 언제 쳐야 하는지
-        self.note_type = note_type  # 노트 타입
+        self.note_type = note_type  # 노트 타입 ('normal', 'long')
+        self.duration = duration  # 롱 노트 지속 시간 (초)
         self.is_hit = False
         self.judgment = None  # 'perfect', 'good', 'bad', 'miss'
+        
+        # 롱 노트 상태
+        self.is_holding = False  # 홀딩 중인지
+        self.hold_start_time = 0  # 홀딩 시작 시간
+        self.hold_completed = False  # 홀딩 완료 여부
         
         # 시각적 표현
         self.x = 1080  
         self.y = 130 
         self.target_x = 120  # 플레이어 위치
         
-
         self.arrow_width = 289
         self.arrow_height = 80
         self.scale = 0.25 
         self.draw_width = int(self.arrow_width * self.scale)  
         self.draw_height = int(self.arrow_height * self.scale)  
         
-  
         self.collision_width = self.draw_width
         self.collision_height = self.draw_height
         
@@ -69,6 +82,18 @@ class RhythmNote:
             # 화면 밖으로 나가면 제거 대상
             if self.x > 1200:
                 self.is_hit = True
+        elif self.is_holding:
+            # 롱 노트 홀딩 중 - 판정선에서 흡수됨
+            # 노트는 판정선(target_x)에 고정
+            self.x = self.target_x
+            
+            # 홀딩 시간 체크
+            hold_elapsed = current_time - self.hold_start_time
+            if hold_elapsed >= self.duration:
+                # 홀딩 완료 - 노트 제거 및 완료 플래그 설정
+                self.is_hit = True
+                self.judgment = 'perfect'
+                self.hold_completed = True  # 홀딩 완료 플래그
         else:
             # 노트가 목표 지점으로 이동
             time_to_beat = self.beat_time - current_time
@@ -94,24 +119,58 @@ class RhythmNote:
             if time_to_beat > 2.0:  
                 return
         
-       
         if RhythmNote.note_image:
             flip = '' if self.is_parried else 'h'  # 패링되면 정방향, 아니면 좌우반전
 
-            if self.is_parried:
-                RhythmNote.note_image.opacify(self.parry_alpha)
-                RhythmNote.note_image.composite_draw(
-                    0, flip,
-                    int(self.x), int(self.y), 
-                    self.draw_width, self.draw_height
-                )
-                RhythmNote.note_image.opacify(1.0)  # 투명도 원상복구
-            else:
-                RhythmNote.note_image.composite_draw(
-                    0, flip,
-                    int(self.x), int(self.y), 
-                    self.draw_width, self.draw_height
-                )
+            # 롱 노트인 경우 이펙트만 그리기 (화살 없이 Lv1光束.png만 사용)
+            if self.note_type == 'long' and self.duration > 0 and RhythmNote.long_note_effect:
+                # 홀딩 중일 때는 남은 시간만큼만 그리기
+                if self.is_holding and not self.hold_completed:
+                    # 남은 시간 계산 (current_time 사용 - update와 동일한 시간 기준)
+                    hold_elapsed = current_time - self.hold_start_time
+                    remaining_time = max(0, self.duration - hold_elapsed)
+                    
+                    # 남은 시간에 비례하는 길이
+                    visible_length = int(remaining_time * 900)
+                    
+                    if visible_length > 10:  # 최소 길이
+                        effect_center_x = int(self.x + visible_length / 2)
+                        effect_center_y = int(self.y)
+                        effect_height = int(RhythmNote.long_note_effect.h * 0.25)
+                        
+                        RhythmNote.long_note_effect.composite_draw(
+                            0, 'h',
+                            effect_center_x, effect_center_y,
+                            visible_length, effect_height
+                        )
+                elif not self.is_parried and not self.is_holding:
+                    # 일반 상태 - 전체 이펙트 그리기 (화살 없이)
+                    full_effect_length = int(self.duration * 900)  # 900px/s 기준
+                    effect_center_x = int(self.x + full_effect_length / 2)
+                    effect_center_y = int(self.y)
+                    effect_height = int(RhythmNote.long_note_effect.h * 0.25)
+                    
+                    RhythmNote.long_note_effect.composite_draw(
+                        0, 'h',
+                        effect_center_x, effect_center_y,
+                        full_effect_length, effect_height
+                    )
+            # 일반 노트만 화살 그리기 (롱 노트는 화살 없이 이펙트만)
+            if self.note_type != 'long' or self.is_parried:
+                if self.is_parried:
+                    RhythmNote.note_image.opacify(self.parry_alpha)
+                    RhythmNote.note_image.composite_draw(
+                        0, flip,
+                        int(self.x), int(self.y), 
+                        self.draw_width, self.draw_height
+                    )
+                    RhythmNote.note_image.opacify(1.0)  # 투명도 원상복구
+                else:
+                    RhythmNote.note_image.composite_draw(
+                        0, flip,
+                        int(self.x), int(self.y), 
+                        self.draw_width, self.draw_height
+                    )
 
 
 class RhythmManager:
@@ -145,6 +204,8 @@ class RhythmManager:
         
         # 콜백
         self.on_miss_callback = None  # Miss 시 호출할 콜백
+        self.on_hold_complete_callback = None  # 홀딩 완료 시 호출할 콜백
+        self.player_ref = None  # Player 참조 (홀딩 완료 시 상태 전환용)
         
         # 점수
         self.score = 0
@@ -243,8 +304,17 @@ class RhythmManager:
         for note in self.active_notes[:]:
             note.update(dt, self.current_time)
             
+            # 홀딩 완료 체크
+            if note.is_holding and hasattr(note, 'hold_completed') and note.hold_completed:
+                # 홀딩 완료 - RunState로 전환
+                if self.player_ref:
+                    from player_state import RunState
+                    self.player_ref.state_machine.add_event(('HOLD_COMPLETE', 0))
+                    print("롱 노트 홀딩 완료! RunState로 전환")
+                note.hold_completed = False  # 플래그 리셋
+            
             # 놓친 노트 처리 (패링되지 않은 노트만)
-            if not note.is_hit and not note.is_parried:
+            if not note.is_hit and not note.is_parried and not note.is_holding:
                 # 플레이어의 패리 범위(x=90 기준)를 지나간 경우 즉시 Miss
                 # 패리 범위는 player.x ± 64 (충돌박스) = 26 ~ 154
                 # 화살표가 x=26(왼쪽 경계)보다 왼쪽으로 가면 Miss
@@ -278,9 +348,21 @@ class RhythmManager:
     def create_notes_from_chart(self):
         """채보 데이터로부터 노트 생성"""
         self.notes = []
-        for beat_time in self.chart_data:
-            self.notes.append(RhythmNote(beat_time))
-        print(f"✓ {len(self.notes)}개 노트 생성 완료")
+        for note_data in self.chart_data:
+            if isinstance(note_data, dict):
+                # 새로운 형식: {'time': float, 'type': str, 'duration': float}
+                self.notes.append(RhythmNote(
+                    beat_time=note_data['time'],
+                    note_type=note_data.get('type', 'normal'),
+                    duration=note_data.get('duration', 0)
+                ))
+            else:
+                # 이전 형식: float (시간만)
+                self.notes.append(RhythmNote(beat_time=note_data))
+        
+        normal_count = sum(1 for n in self.notes if n.note_type == 'normal')
+        long_count = sum(1 for n in self.notes if n.note_type == 'long')
+        print(f"✓ 노트 생성 완료: 일반 {normal_count}개, 롱 {long_count}개")
     
     def try_hit(self, hit_time=None, player=None):
         """플레이어의 입력 처리 - 충돌 기반 패링"""
@@ -311,7 +393,14 @@ class RhythmManager:
         if parried_note is None:
             return 'miss', False, None
         
-        # 패링 성공 - 화살표를 반대로 날림
+        # 롱 노트인 경우 홀딩 시작
+        if parried_note.note_type == 'long' and not parried_note.is_holding:
+            parried_note.is_holding = True
+            parried_note.hold_start_time = hit_time
+            print(f"롱 노트 홀딩 시작! 길이: {parried_note.duration:.2f}초")
+            return 'holding', True, parried_note
+        
+        # 일반 노트 패링 - 화살표를 반대로 날림
         parried_note.parry()
         
         # 판정 계산 (타이밍 기반)
@@ -349,6 +438,21 @@ class RhythmManager:
         # active_notes에서도 제거하지 않음 - update()에서 화면 밖으로 나갈 때 제거됨
         
         return judgment, success, parried_note
+    
+    def release_hold(self):
+        """홀딩 중인 롱 노트 릴리즈 처리"""
+        for note in self.active_notes:
+            if note.is_holding:
+                # 홀딩 중이던 노트를 실패 처리
+                note.is_holding = False
+                note.is_hit = True
+                note.judgment = 'miss'
+                self.combo = 0
+                print("롱 노트 홀딩 실패!")
+                # Miss 콜백 호출
+                if self.on_miss_callback:
+                    self.on_miss_callback()
+                break
     
     def draw(self):
         """리듬 시스템 그리기"""

@@ -28,6 +28,8 @@ class PlayMode:
         
         # Miss 콜백 설정
         self.rhythm_manager.on_miss_callback = self.player.take_damage
+        # Player 참조 전달 (홀딩 완료 시 상태 전환용)
+        self.rhythm_manager.player_ref = self.player
         
     def exit(self):
         # 음악 정지
@@ -53,13 +55,21 @@ class PlayMode:
                     # 리듬 판정 (player 충돌 기반)
                     judgment, success, parried_note = self.rhythm_manager.try_hit(player=self.player)
                     
-                    # 패링 성공 시 이펙트 애니메이션
                     if success and parried_note:
-                        is_perfect = (judgment == 'perfect')
-                        self.player.parry_success(is_perfect)
-                        print(f"패링 성공! {judgment}")
-                        self.last_judgment = judgment
-                        self.judgment_time = 0
+                        if judgment == 'holding':
+                            # 롱 노트 홀딩 시작 - HoldState로 전환
+                            from player_state import HoldState
+                            self.player.state_machine.add_event(('HOLD_START', 0))
+                            self.player.state_machine.cur_state = HoldState
+                            HoldState.enter(self.player, ('HOLD_START', 0))
+                            print("HoldState로 전환")
+                        else:
+                            # 일반 패링 - 이펙트 표시
+                            is_perfect = (judgment == 'perfect')
+                            self.player.parry_success(is_perfect)
+                            print(f"패링 성공! {judgment}")
+                            self.last_judgment = judgment
+                            self.judgment_time = 0
 
                         
             elif event.key == SDLK_r and (self.game_over or self.victory):
@@ -71,6 +81,15 @@ class PlayMode:
                 
             elif event.key == SDLK_ESCAPE:
                 game_framework.quit()
+        
+        elif event.type == SDL_KEYUP:
+            if event.key == SDLK_SPACE:
+                # 스페이스 릴리즈 처리
+                from player_state import HoldState
+                if self.player.state_machine.cur_state == HoldState:
+                    # HoldState에서 릴리즈 - 홀딩 해제
+                    self.rhythm_manager.release_hold()
+                    self.player.state_machine.add_event(('SPACE_UP', 0))
     
     def update(self):
         if self.game_over or self.victory:
@@ -78,8 +97,11 @@ class PlayMode:
             
         dt = game_framework.game_state.dt
         
-        # 배경 업데이트 (항상 스크롤)
-        self.background.update(dt, True)
+        # 배경 업데이트 (HoldState나 DieState일 때는 멈춤)
+        from player_state import HoldState, DieState
+        should_scroll = (self.player.state_machine.cur_state != HoldState and 
+                        self.player.state_machine.cur_state != DieState)
+        self.background.update(dt, should_scroll)
         
         # 플레이어 업데이트
         self.player.update(dt)

@@ -179,53 +179,66 @@ class MusicAnalyzer:
             chart = [t + start_delay for i, t in enumerate(self.beat_times) if i % 2 == 0]
             
         elif difficulty == 'normal':
-            # Normal: 모든 비트 + 일부 온셋 (0.25초 이상 간격)
-            combined = list(self.beat_times)
+            # Normal: 온셋 중심으로 리듬 구성 (단순 비트 제외)
+            # 온셋이 실제 악기/보컬 타이밍을 더 잘 반영함
             
-            # 비트 사이에 온셋 추가 (강한 온셋만)
-            for onset_time in self.onset_times:
-                # 가장 가까운 비트와의 거리 확인
-                min_dist = min([abs(onset_time - bt) for bt in self.beat_times])
-                if min_dist >= 0.2:  # 비트에서 0.2초 이상 떨어진 온셋만 추가
-                    combined.append(onset_time)
+            all_onsets = list(self.onset_times)
+            all_beats = list(self.beat_times)
             
-            combined = sorted(combined)
+            # 1. 온셋 중심 선택
+            selected_notes = []
             
-            # 너무 가까운 노트 제거
+            # 2. 비트는 선택적으로만 사용 (4박자마다 또는 강한 비트만)
+            for i, beat in enumerate(all_beats):
+                # 4박자마다만 비트 추가 (너무 반복적이지 않게)
+                if i % 4 == 0:
+                    selected_notes.append(beat)
+            
+            # 3. 온셋 중 비트와 겹치지 않는 것들 추가 (복잡한 리듬)
+            for onset in all_onsets:
+                min_beat_dist = min([abs(onset - bt) for bt in all_beats]) if all_beats else 1.0
+                # 비트에서 0.15초 이상 떨어진 온셋 (실제 악기 타이밍)
+                if min_beat_dist >= 0.15:
+                    selected_notes.append(onset)
+            
+            selected_notes = sorted(selected_notes)
+            
+            # 최소 간격 필터 (0.2초 - 더 여유있게)
             filtered = []
             last_time = -1
-            for t in combined:
-                if t - last_time >= 0.25:
+            for t in selected_notes:
+                if last_time < 0 or t - last_time >= 0.2:
                     filtered.append(t + start_delay)
                     last_time = t
             chart = filtered
             
         elif difficulty == 'hard':
-            # Hard: 음악의 실제 리듬을 따르는 난이도
-            # 비트 + 온셋을 조합하되, 온셋 밀도를 분석하여 리듬 패턴 유지
+            # Hard: 온셋 기반 + 복잡한 리듬 패턴
             
             all_onsets = list(self.onset_times)
             all_beats = list(self.beat_times)
             
-            # 온셋을 강도로 분류 (비트 근처의 온셋은 약함, 비트 사이의 온셋은 강함)
-            strong_onsets = []
+            selected_notes = []
+            
+            # 1. 2박자마다 비트 추가 (기본 구조)
+            for i, beat in enumerate(all_beats):
+                if i % 2 == 0:
+                    selected_notes.append(beat)
+            
+            # 2. 모든 중요한 온셋 추가 (비트에서 떨어진 것들)
             for onset in all_onsets:
-                # 가장 가까운 비트와의 거리
                 min_beat_dist = min([abs(onset - bt) for bt in all_beats]) if all_beats else 1.0
-                
-                # 비트에서 0.15초 이상 떨어진 온셋만 선택 (실제 음악적 타이밍)
-                if min_beat_dist >= 0.15:
-                    strong_onsets.append(onset)
+                # 비트에서 0.1초 이상 떨어진 온셋
+                if min_beat_dist >= 0.1:
+                    selected_notes.append(onset)
             
-            # 비트 + 강한 온셋 조합
-            combined = all_beats + strong_onsets
-            combined = sorted(combined)
+            selected_notes = sorted(selected_notes)
             
-            # 최소 간격만 적용 (0.06초 - 음악적 리듬 유지)
+            # 최소 간격 (0.1초 - 빠른 리듬 허용)
             filtered = []
             last_time = -1
-            for t in combined:
-                if t - last_time >= 0.06:
+            for t in selected_notes:
+                if last_time < 0 or t - last_time >= 0.1:
                     filtered.append(t + start_delay)
                     last_time = t
             chart = filtered
@@ -255,8 +268,31 @@ class MusicAnalyzer:
             print(f"알 수 없는 난이도: {difficulty}, normal로 설정")
             chart = [t + start_delay for t in self.beat_times]
         
-        print(f"채보 생성 완료: 난이도={difficulty}, 노트 수={len(chart)}")
-        return chart
+        # 롱 노트 생성 (긴 비트 간격에 추가)
+        chart_with_type = []
+        if len(chart) > 1:
+            for i in range(len(chart)):
+                note_time = chart[i]
+                
+                # 다음 노트와의 간격이 1.5초 이상이면 롱 노트로 변환
+                if i < len(chart) - 1:
+                    interval = chart[i + 1] - note_time
+                    if interval >= 1.5 and interval <= 3.0:
+                        # 롱 노트 (간격의 70% 길이)
+                        duration = interval * 0.7
+                        chart_with_type.append({'time': note_time, 'type': 'long', 'duration': duration})
+                        continue
+                
+                # 일반 노트
+                chart_with_type.append({'time': note_time, 'type': 'normal', 'duration': 0})
+        else:
+            # 롱 노트 없이 일반 노트만
+            chart_with_type = [{'time': t, 'type': 'normal', 'duration': 0} for t in chart]
+        
+        normal_count = sum(1 for n in chart_with_type if n['type'] == 'normal')
+        long_count = sum(1 for n in chart_with_type if n['type'] == 'long')
+        print(f"채보 생성 완료: 난이도={difficulty}, 일반 노트={normal_count}개, 롱 노트={long_count}개")
+        return chart_with_type
     
     def get_bpm(self):
         """BPM 반환"""

@@ -177,6 +177,57 @@ class ParryState:
                 int(player.x), int(player.y), int(draw_width), int(draw_height)
             )
 
+class HoldState:
+    """롱 노트 홀딩 상태"""
+    
+    def enter(player, e):
+        player.current_anim = 'player_parry'  # ABC 패리 모션 사용
+        player.anim_frame = 0
+        player.hold_start_time = time.time()
+        player.last_effect_time = time.time()  # 마지막 이펙트 재생 시간
+        # 패링 성공 이펙트 시작 (accurate)
+        player.start_effect('accurate')
+        print("HoldState 진입 - 롱 노트 홀딩")
+    
+    def exit(player, e):
+        pass
+    
+    def do(player):
+        # 이펙트를 0.15초마다 반복 (더 빠른 반복)
+        current_time = time.time()
+        if current_time - player.last_effect_time >= 0.15:
+            player.start_effect('accurate')
+            player.last_effect_time = current_time
+        
+        # 애니메이션 루프 (ABC 패리 모션 반복)
+        if player.current_anim == 'player_parry':
+            anim_data = player.sprite_sheets.get('player_parry')
+            if anim_data:
+                # 애니메이션이 끝나면 다시 처음부터 (루프)
+                if player.anim_frame >= anim_data['total_frames'] - 1:
+                    player.anim_frame = 0
+    
+    def draw(player):
+        # ABC Parry 애니메이션 그리기
+        if 'player_parry' in player.sprite_sheets:
+            anim_data = player.sprite_sheets['player_parry']
+            sprite_sheet = anim_data['image']
+            sprite_width = anim_data['sprite_width']
+            sprite_height = anim_data['sprite_height']
+            total_frames = anim_data['total_frames']
+            
+            current_frame = min(player.anim_frame, total_frames - 1)
+            frame_x = current_frame * sprite_width
+            
+            draw_scale = 0.25
+            draw_width = int(sprite_width * draw_scale)
+            draw_height = int(sprite_height * draw_scale)
+            
+            sprite_sheet.clip_draw(
+                int(frame_x), 0, int(sprite_width), int(sprite_height),
+                int(player.x), int(player.y), int(draw_width), int(draw_height)
+            )
+
 class HitState:
       
     def enter(player, e):
@@ -232,34 +283,41 @@ SPACE_UP = 1
 TIME_OUT = 2
 DIE = 3
 HIT = 4
+HOLD_COMPLETE = 5  # 롱 노트 홀딩 완료
 
 # 상태 전이 테이블
 transitions = {
     FightIdleState: {
         SPACE_DOWN: ParryState,
-        TIME_OUT: RunState,  # 0.3초 후 Run으로 전환
-        HIT: HitState,  # 피격 시 HitState로 전환
-        DIE: DieState  # HP 0 시 Die로 전환
+        TIME_OUT: RunState,
+        HIT: HitState,
+        DIE: DieState
     },
     ParryState: {
         SPACE_DOWN: ParryState,  # 연속 패링 가능
         TIME_OUT: RunState,  # 패링 애니메이션 종료 후 바로 Run으로
-        HIT: HitState,  # 피격 시 HitState로 전환
-        DIE: DieState  # HP 0 시 Die로 전환
+        HIT: HitState,
+        DIE: DieState
+    },
+    HoldState: {
+        SPACE_UP: RunState,  # 스페이스 릴리즈 시 바로 Run으로 (홀딩 실패)
+        HOLD_COMPLETE: RunState,  # 홀딩 완료 시 Run으로
+        HIT: HitState,
+        DIE: DieState
     },
     RunState: {
-        SPACE_DOWN: ParryState,  # Run 중에도 패링 가능
-        HIT: HitState,  # 피격 시 HitState로 전환
-        DIE: DieState  # HP 0 시 Die로 전환
+        SPACE_DOWN: ParryState,  # Run 중 짧은 입력은 패링
+        HIT: HitState,
+        DIE: DieState
     },
     HitState: {
-        SPACE_DOWN: ParryState,  # 피격 중 space 입력 시 패링으로 전환
-        HIT: HitState,  # 연속 피격 시 애니메이션 처음부터 재생
-        TIME_OUT: RunState,  # 피격 애니메이션 후 RunState로 복귀
-        DIE: DieState  # HP 0 시 Die로 전환
+        SPACE_DOWN: ParryState,
+        HIT: HitState,
+        TIME_OUT: RunState,
+        DIE: DieState
     },
     DieState: {
-        # Die 상태에서는 어떤 이벤트도 처리하지 않음 (게임 오버)
+        # Die 상태에서는 어떤 이벤트도 처리하지 않음
     }
 }
 
